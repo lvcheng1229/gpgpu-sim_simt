@@ -426,6 +426,14 @@ class simt_stack {
     simt_mask_t m_active_mask;
     address_type m_recvg_pc;
     unsigned long long m_branch_div_cycle;
+    
+    //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+
+    // 3.3.1_2 The R-Index is used to directly index the corresponding reconvergence entry in the RT table upon reconvergence.
+    int m_r_index;
+
+    //GPGPULearning:ZSY_MPIPDOM:[END]
+
     stack_entry_type m_type;
     simt_stack_entry()
         : m_pc(-1),
@@ -436,7 +444,18 @@ class simt_stack {
           m_type(STACK_ENTRY_TYPE_NORMAL){};
   };
 
-  std::deque<simt_stack_entry> m_stack;
+//GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+  std::deque<simt_stack_entry> m_stack; /*GPGPULearning:ZSY_MPIPDOM:st_table*/
+
+  struct simt_recovergence_table
+  {
+      address_type m_pc;
+      address_type m_recvg_pc;
+      simt_mask_t m_recvg_mask;
+      simt_mask_t m_pending_mask;
+  };
+  std::deque<simt_recovergence_table> m_rt_table;
+//GPGPULearning:ZSY_MPIPDOM:[END]
 
   class gpgpu_sim *m_gpu;
 };

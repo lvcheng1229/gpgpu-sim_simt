@@ -1144,10 +1144,38 @@ void simt_stack::update(simt_mask_t &thread_done, addr_vector_t &next_pc,
       // stack
       new_recvg_pc = recvg_pc;
       if (new_recvg_pc != top_recvg_pc) {
-        m_stack.back().m_pc = new_recvg_pc;
-        m_stack.back().m_branch_div_cycle =
-            m_gpu->gpu_sim_cycle + m_gpu->gpu_tot_sim_cycle;
+        //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
 
+        // Step 2a:
+        
+        // The warp is scheduled on the pipeline until it reaches the end of block A. After the warp executes
+        // branch BR_A_BC on cycle 2, warp A1111 diverges into two splits B0101 and C1010. 
+        // Then, the A1111 entry is moved from the ST to the RT
+        m_rt_table.push_back(simt_recovergence_table());
+
+        // with PC field set to the RPC of branch BR_A_BC (i.e., D)
+        m_rt_table.back().m_pc = new_recvg_pc;
+
+        // The RPC can be determined at compile time and either conveyed using an additional instruction before the branch or encoded as part of the branch itself
+        m_rt_table.back().m_pc = m_recvg_pc;
+
+        // The Reconvergence Mask entry is set to the same value of the active mask of the diverged warp split before the branch.
+        m_rt_table.back().m_recvg_mask =  m_stack.back().active_mask;
+
+        // The Pending Mask entry is used to represent threads that have not yet reached the reconvergence point. 
+        // Hence, it is also initially set to the same value as the active mask
+        m_rt_table.back().m_pending_mask =  m_stack.back().active_mask;
+
+        // Step 2b:
+
+        // The item on the stack top is moved into recvg table, which meams that we should pop it up.
+        // m_stack.back().m_pc = new_recvg_pc;
+        // m_stack.back().m_branch_div_cycle = m_gpu->gpu_sim_cycle + m_gpu->gpu_tot_sim_cycle;
+        m_stack.pop_back();
+
+        // At the same time, two new entries are inserted into the ST; one for each side of the branch
+       
+        //GPGPULearning:ZSY_MPIPDOM:[END]
         m_stack.push_back(simt_stack_entry());
       }
     }
@@ -1161,6 +1189,9 @@ void simt_stack::update(simt_mask_t &thread_done, addr_vector_t &next_pc,
     if (warp_diverged) {
       m_stack.back().m_calldepth = 0;
       m_stack.back().m_recvg_pc = new_recvg_pc;
+      //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+      m_stack.back().m_r_index = m_rt_table.size() - 1;
+      //GPGPULearning:ZSY_MPIPDOM:[END]
     } else {
       m_stack.back().m_recvg_pc = top_recvg_pc;
     }
