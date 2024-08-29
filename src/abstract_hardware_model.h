@@ -399,7 +399,7 @@ typedef std::vector<address_type> addr_vector_t;
 
 class simt_stack {
  public:
-  simt_stack(unsigned wid, unsigned warpSize, class gpgpu_sim *gpu);
+  simt_stack(unsigned wid, unsigned warpSize, class gpgpu_sim *gpu, shader_core_ctx* shader/*GPGPULearning:ZSY_MPIPDOM*/);
 
   void reset();
   void launch(address_type start_pc, const simt_mask_t &active_mask);
@@ -428,10 +428,8 @@ class simt_stack {
     unsigned long long m_branch_div_cycle;
     
     //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
-
     // 3.3.1_2 The R-Index is used to directly index the corresponding reconvergence entry in the RT table upon reconvergence.
     int m_r_index;
-
     //GPGPULearning:ZSY_MPIPDOM:[END]
 
     stack_entry_type m_type;
@@ -441,10 +439,20 @@ class simt_stack {
           m_active_mask(),
           m_recvg_pc(-1),
           m_branch_div_cycle(0),
+          //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+          m_r_index(-1),
+          //GPGPULearning:ZSY_MPIPDOM:[END]
           m_type(STACK_ENTRY_TYPE_NORMAL){};
   };
 
-//GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+  class gpgpu_sim *m_gpu;
+
+  //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+public:
+  void launch(unsigned original_wid, simt_stack_entry new_stack_entry);
+
+  unsigned int m_orig_warp_id;
+  shader_core_ctx* m_shader;
   std::deque<simt_stack_entry> m_stack; /*GPGPULearning:ZSY_MPIPDOM:st_table*/
 
   struct simt_recovergence_table
@@ -453,11 +461,19 @@ class simt_stack {
       address_type m_recvg_pc;
       simt_mask_t m_recvg_mask;
       simt_mask_t m_pending_mask;
+      unsigned m_split_wid;
+
+      struct st_extra_info
+      {
+          unsigned int m_calldepth;
+          unsigned long long m_branch_div_cycle;
+          stack_entry_type m_type;
+      };
+
+      st_extra_info extro_info;
   };
   std::deque<simt_recovergence_table> m_rt_table;
 //GPGPULearning:ZSY_MPIPDOM:[END]
-
-  class gpgpu_sim *m_gpu;
 };
 
 // Let's just upgrade to C++11 so we can use constexpr here...
@@ -1133,6 +1149,7 @@ class warp_inst_t : public inst_t {
     assert(!m_empty);
     return m_warp_id;
   }
+  
   unsigned warp_id_func() const  // to be used in functional simulations only
   {
     return m_warp_id;

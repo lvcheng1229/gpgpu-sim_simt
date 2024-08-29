@@ -536,7 +536,7 @@ void shader_core_ctx::init_warps(unsigned cta_id, unsigned start_thread,
         start_pc = pc;
       }
 
-      m_warp[i]->init(start_pc, cta_id, i, active_threads, m_dynamic_warp_id);
+      m_warp[i]->init(start_pc, cta_id, i, active_threads, i,/*GPGPULearning:ZSY_MPIPDOM*/ m_dynamic_warp_id);
       ++m_dynamic_warp_id;
       m_not_completed += n_active;
       ++m_active_warps;
@@ -3352,6 +3352,36 @@ void shader_core_config::set_pipeline_latency() {
   max_dp_latency = dp_latency[1];
   max_tensor_core_latency = tensor_latency;
 }
+
+//GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+int shader_core_ctx::find_idle_warp()
+{
+    for(int wid = 0; wid < m_config->max_warps_per_shader; wid++)
+    {
+        if(m_warp[wid]->done_exit())
+        {
+          return i;
+        }
+    }
+    assert(false);
+    return -1;
+}
+
+int shader_core_ctx::split_warp(int original_warp_id, simt_stack::simt_stack_entry entry)
+{
+    // split and init the new warp
+    address_type nwp_start_pc = entry.m_pc;
+    unsigned nwp_cooperative_trd_array = m_warp[original_warp_id]->get_cta_id();
+    int new_idle_wid = find_idle_warp();
+    const std::bitset<MAX_WARP_SIZE>& new_wp_active_mask = entry.active_mask;
+    m_warp[new_idle_wid]->init(nwp_start_pc, nwp_cooperative_trd_array, new_idle_wid, new_wp_active_mask, original_warp_id, m_dynamic_warp_id);
+
+    // launch new warp
+    m_simt_stack[new_idle_wid]->launch(original_warp_id, entry);
+
+    m_warp[original_warp_id]->m_active_threads &= ~(entry.m_active_mask);
+}
+//GPGPULearning:ZSY_MPIPDOM:[END]
 
 void shader_core_ctx::cycle() {
   if (!isactive() && get_not_completed() == 0) return;

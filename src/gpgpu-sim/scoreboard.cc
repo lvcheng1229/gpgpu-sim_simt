@@ -69,12 +69,27 @@ void Scoreboard::reserveRegister(unsigned wid, unsigned regnum) {
 }
 
 // Unmark register as write-pending
-void Scoreboard::releaseRegister(unsigned wid, unsigned regnum) {
-  if (!(reg_table[wid].find(regnum) != reg_table[wid].end())) return;
+// GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+void Scoreboard::releaseRegister(unsigned wid, active_mask_t i_mask/*GPGPULearning:ZSY_MPIPDOM*/, unsigned regnum) {
+  //if (!(reg_table[wid].find(regnum) != reg_table[wid].end())) return;
   SHADER_DPRINTF(SCOREBOARD, "Release register - warp:%d, reg: %d\n", wid,
                  regnum);
-  reg_table[wid].erase(regnum);
+
+  auto iter = reg_table[wid].find(regnum);
+  assert(iter != reg_table[wid].end());
+
+  // Step4
+  // At 4 , I0 writes the load value to R0 and hence it releases R0 and clears the R-mask of the R0 entry from the scoreboard unit 
+  auto& reserved_mask = iter->second;
+  reserved_mask &= ~i_mask;
+
+  // (the R0 entry becomes invalid since its R-mask is all zeros)
+  if (!reserved_mask.any())
+  {
+    reg_table[wid].erase(regnum);
+  }
 }
+// GPGPULearning:ZSY_MPIPDOM:[END]
 
 const bool Scoreboard::islongop(unsigned warp_id, unsigned regnum) {
   return longopregs[warp_id].find(regnum) != longopregs[warp_id].end();

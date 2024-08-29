@@ -28,6 +28,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <map> //GPGPULearning:ZSY_MPIPDOM
 #include <set>
 #include <vector>
 #include "assert.h"
@@ -51,14 +52,24 @@ class Scoreboard {
   const bool islongop(unsigned warp_id, unsigned regnum);
 
  private:
-  void reserveRegister(unsigned wid, unsigned regnum);
+  void reserveRegister(unsigned wid, active_mask_t i_mask/*GPGPULearning:ZSY_MPIPDOM*/, unsigned regnum);
   int get_sid() const { return m_sid; }
 
   unsigned m_sid;
 
   // keeps track of pending writes to registers
   // indexed by warp id, reg_id => pending write count
-  std::vector<std::set<unsigned> > reg_table;
+
+  //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+
+  // A form of set-associative look-up table (Figure 8a) is employed, where sets are indexed using warp
+  // ids and entries within each set contain a destination register ID of an instruction in flight for a given wa
+  //std::vector<std::set<unsigned> > reg_table;
+  
+  //Therefore, we modify the scoreboard design by adding a reserved mask (R-mask) field to each entry in the scoreboard look-up table as shown in Figure 8b
+  std::vector<std::map<unsigned, active_mask_t> > reg_table;
+  //GPGPULearning:ZSY_MPIPDOM:[END]
+
   // Register that depend on a long operation (global, local or tex memory)
   std::vector<std::set<unsigned> > longopregs;
 

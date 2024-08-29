@@ -109,7 +109,8 @@ class shd_warp_t {
     assert(m_stores_outstanding == 0);
     assert(m_inst_in_pipeline == 0);
     m_imiss_pending = false;
-    m_warp_id = (unsigned)-1;
+    m_warp_id = (unsigned)-1; /*GPGPULearning:ZSY_MPIPDOM*/
+    m_original_warp_id = (unsigned)-1;
     m_dynamic_warp_id = (unsigned)-1;
     n_completed = m_warp_size;
     m_n_atomic = 0;
@@ -124,9 +125,11 @@ class shd_warp_t {
   }
   void init(address_type start_pc, unsigned cta_id, unsigned wid,
             const std::bitset<MAX_WARP_SIZE> &active,
+            unsigned original_warp_id,/*GPGPULearning:ZSY_MPIPDOM*/
             unsigned dynamic_warp_id) {
     m_cta_id = cta_id;
     m_warp_id = wid;
+    m_original_warp_id = original_warp_id;/*GPGPULearning:ZSY_MPIPDOM*/
     m_dynamic_warp_id = dynamic_warp_id;
     m_next_pc = start_pc;
     assert(n_completed >= active.count());
@@ -245,6 +248,7 @@ class shd_warp_t {
   unsigned m_cta_id;
   unsigned m_warp_id;
   unsigned m_warp_size;
+  unsigned m_original_warp_id; /*GPGPULearning:ZSY_MPIPDOM*/
   unsigned m_dynamic_warp_id;
 
   address_type m_next_pc;
@@ -1879,6 +1883,11 @@ class shader_core_ctx : public core_t {
                   unsigned shader_id, unsigned tpc_id,
                   const shader_core_config *config,
                   const memory_config *mem_config, shader_core_stats *stats);
+
+  //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+  int find_idle_warp();
+  int split_warp(int original_warp_id, simt_stack::simt_stack_entry entry);
+  //GPGPULearning:ZSY_MPIPDOM:[END]
 
   // used by simt_core_cluster:
   // modifiers

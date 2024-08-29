@@ -914,17 +914,24 @@ void kernel_info_t::destroy_cta_streams() {
   m_cta_streams.clear();
 }
 
-simt_stack::simt_stack(unsigned wid, unsigned warpSize, class gpgpu_sim *gpu) {
+simt_stack::simt_stack(unsigned wid, unsigned warpSize, class gpgpu_sim *gpu, shader_core_ctx* shader/*GPGPULearning:ZSY_MPIPDOM*/) {
   m_warp_id = wid;
   m_warp_size = warpSize;
   m_gpu = gpu;
+  m_shader = shader; /*GPGPULearning:ZSY_MPIPDOM*/
   reset();
 }
 
-void simt_stack::reset() { m_stack.clear(); }
+void simt_stack::reset() 
+{ 
+  m_stack.clear(); 
+  m_rt_table.clear();  /*GPGPULearning:ZSY_MPIPDOM*/
+}
 
 void simt_stack::launch(address_type start_pc, const simt_mask_t &active_mask) {
   reset();
+  m_orig_warp_id = m_warp_id;/*GPGPULearning:ZSY_MPIPDOM*/
+
   simt_stack_entry new_stack_entry;
   new_stack_entry.m_pc = start_pc;
   new_stack_entry.m_calldepth = 1;
@@ -932,6 +939,15 @@ void simt_stack::launch(address_type start_pc, const simt_mask_t &active_mask) {
   new_stack_entry.m_type = STACK_ENTRY_TYPE_NORMAL;
   m_stack.push_back(new_stack_entry);
 }
+
+// GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+void simt_stack::launch(unsigned original_wid, simt_stack_entry new_stack_entry)
+{
+    reset();
+    m_orig_warp_id = m_warp_id;
+    m_stack.push_back(new_stack_entry);
+}
+// GPGPULearning:ZSY_MPIPDOM:[END]
 
 void simt_stack::resume(char *fname) {
   reset();
@@ -1133,8 +1149,68 @@ void simt_stack::update(simt_mask_t &thread_done, addr_vector_t &next_pc,
     // discard the new entry if its PC matches with reconvergence PC
     // that automatically reconverges the entry
     // If the top stack entry is CALL, dont reconverge.
+
+    //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+    // if (tmp_next_pc == top_recvg_pc && (top_type != STACK_ENTRY_TYPE_CALL))
+    //  continue;
+
+    std::deque<simt_recovergence_table>& real_rt_table = m_shader->m_simt_stack[m_orig_warp_id]->m_rt_table;
+
+    // Step 3a:
+    // On cycle 6, warp split B0101 reaches the reconvergence point (D) first.
     if (tmp_next_pc == top_recvg_pc && (top_type != STACK_ENTRY_TYPE_CALL))
-      continue;
+    {
+        int r_index = m_stack.back().m_r_index;
+
+        // Step3b:
+        // and its active mask is subtracted from the pending active mask of the corresponing entry in the RT table
+        simt_mask_t st_active_mask = m_stack.back().m_active_mask;
+        real_rt_table[r_index].m_pending_mask &= ~st_active_mask;
+
+        int split_wid = real_rt_table[r_index].m_split_wid;
+
+        // Therefore, its entry in the ST table is invalidated
+        m_stack.pop_back();
+
+        // destroy this tmp warp split
+        if (m_warp_id != split_wid)
+        {
+            for (int i = 0; i < m_warp_size; i++)
+            {
+              if (msk.test(i)) 
+              {
+                m_shader->m_warp[m_warp_id]->set_completed(i);
+              }
+            }
+
+            m_shader->m_warp[m_warp_id]->clear_imiss_pending();
+            m_shader->m_warp[m_warp_id]->ibuffer_flush();
+        }
+
+        // Step5:
+        // Upon each update to the pending active mask in the RT table, 
+        // the Pending Mask is checked if it is all zeros, which is true in this case
+        if (!real_rt_table[rtid].m_pending_mask.any())
+        {
+            assert(rtid == (real_rt_table.size() - 1));
+
+            // The entry is then moved from the RT table to the ST table
+            auto& real_st_table = m_shader->m_simt_stack[split_wid]->m_stack;
+            real_st_table.back().push_back(simt_stack_entry());
+            real_st_table.back().m_active_mask = real_rt_table[rtid].m_recvg_mask;
+            real_st_table.back().m_r_index = -1; // unused
+            real_st_table.back().m_pc = real_rt_table[rtid].m_pc;
+            real_st_table.back().m_recvg_pc = real_rt_table[rtid].m_recvg_pc;
+
+            real_st_table.back().m_branch_div_cycle = real_rt_table[rtid].extro_info.m_branch_div_cycle;
+            real_st_table.back().m_calldepth = real_rt_table[rtid].extro_info.m_calldepth;
+            real_st_table.back().m_type = real_rt_table[rtid].extro_info.m_type;
+            m_shader->m_warp[split_wid]->m_active_threads = st_stack.back().m_active_mask; //reset the active mask
+
+            real_rt_table.pop_back();
+        }
+    }
+    //GPGPULearning:ZSY_MPIPDOM:[END]
 
     // this new entry is not converging
     // if this entry does not include thread from the warp, divergence occurs
@@ -1151,20 +1227,27 @@ void simt_stack::update(simt_mask_t &thread_done, addr_vector_t &next_pc,
         // The warp is scheduled on the pipeline until it reaches the end of block A. After the warp executes
         // branch BR_A_BC on cycle 2, warp A1111 diverges into two splits B0101 and C1010. 
         // Then, the A1111 entry is moved from the ST to the RT
-        m_rt_table.push_back(simt_recovergence_table());
+        real_rt_table.push_back(simt_recovergence_table());
 
         // with PC field set to the RPC of branch BR_A_BC (i.e., D)
-        m_rt_table.back().m_pc = new_recvg_pc;
+        real_rt_table.back().m_pc = new_recvg_pc;
 
         // The RPC can be determined at compile time and either conveyed using an additional instruction before the branch or encoded as part of the branch itself
-        m_rt_table.back().m_pc = m_recvg_pc;
+        real_rt_table.back().m_recvg_pc = m_recvg_pc;
 
         // The Reconvergence Mask entry is set to the same value of the active mask of the diverged warp split before the branch.
-        m_rt_table.back().m_recvg_mask =  m_stack.back().active_mask;
+        real_rt_table.back().m_recvg_mask =  m_stack.back().active_mask;
 
         // The Pending Mask entry is used to represent threads that have not yet reached the reconvergence point. 
         // Hence, it is also initially set to the same value as the active mask
-        m_rt_table.back().m_pending_mask =  m_stack.back().active_mask;
+        real_rt_table.back().m_pending_mask =  m_stack.back().active_mask;
+
+        real_rt_table.back().m_split_wid = m_warp_id;
+
+        // extro information
+        real_rt_table.back().extro_info.m_branch_div_cycle = m_gpu->gpu_sim_cycle + m_gpu->gpu_tot_sim_cycle;
+        real_rt_table.back().extro_info.m_calldepth = m_stack.back().m_calldepth;
+        real_rt_table.back().extro_info.m_type = m_stack.back().m_type;
 
         // Step 2b:
 
@@ -1190,11 +1273,20 @@ void simt_stack::update(simt_mask_t &thread_done, addr_vector_t &next_pc,
       m_stack.back().m_calldepth = 0;
       m_stack.back().m_recvg_pc = new_recvg_pc;
       //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
-      m_stack.back().m_r_index = m_rt_table.size() - 1;
+      m_stack.back().m_r_index = real_rt_table.size() - 1;
       //GPGPULearning:ZSY_MPIPDOM:[END]
     } else {
       m_stack.back().m_recvg_pc = top_recvg_pc;
     }
+
+    //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+    if(i == 1)
+    {
+        // along with the new warp splits resulting from the divergence
+        m_shader->split_warp(m_orig_warp_id, m_stack,back());
+        m_stack.pop_back();
+    }
+    //GPGPULearning:ZSY_MPIPDOM:[END]
 
     m_stack.push_back(simt_stack_entry());
   }
