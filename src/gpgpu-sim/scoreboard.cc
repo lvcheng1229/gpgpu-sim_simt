@@ -55,8 +55,15 @@ void Scoreboard::printContents() const {
   }
 }
 
-void Scoreboard::reserveRegister(unsigned wid, unsigned regnum) {
-  if (!(reg_table[wid].find(regnum) == reg_table[wid].end())) {
+// GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+void Scoreboard::reserveRegister(unsigned wid, active_mask_t i_mask/*GPGPULearning:ZSY_MPIPDOM*/, unsigned regnum) {
+
+  auto iter = reg_table[wid].find(regnum);
+  active_mask_t reserved_mask;
+  reserved_mask.reset();
+
+  if (!(iter == reg_table[wid].end())) {
+    reserved_mask = iter->second;
     printf(
         "Error: trying to reserve an already reserved register (sid=%d, "
         "wid=%d, regnum=%d).",
@@ -65,8 +72,14 @@ void Scoreboard::reserveRegister(unsigned wid, unsigned regnum) {
   }
   SHADER_DPRINTF(SCOREBOARD, "Reserved Register - warp:%d, reg: %d\n", wid,
                  regnum);
-  reg_table[wid].insert(regnum);
+  // Hence, at 5 , it reserves its destination register R1 with an R-mask=1010; 
+  // such that R1 becomes reserved
+  // by all lanes—odd lanes due to pending writes of I1 and even
+  // lanes due to pending writes of I2. 
+  reserved_mask |= i_mask; 
+  reg_table[wid][regnum] = reserved_mask;
 }
+// GPGPULearning:ZSY_MPIPDOM:[END]
 
 // Unmark register as write-pending
 // GPGPULearning:ZSY_MPIPDOM:[BEGIN]
@@ -98,7 +111,7 @@ const bool Scoreboard::islongop(unsigned warp_id, unsigned regnum) {
 void Scoreboard::reserveRegisters(const class warp_inst_t* inst) {
   for (unsigned r = 0; r < MAX_OUTPUT_VALUES; r++) {
     if (inst->out[r] > 0) {
-      reserveRegister(inst->warp_id(), inst->out[r]);
+      reserveRegister(inst->original_wid(), inst->get_warp_active_mask(), inst->out[r]); // GPGPULearning:ZSY_MPIPDOM
       SHADER_DPRINTF(SCOREBOARD, "Reserved register - warp:%d, reg: %d\n",
                      inst->warp_id(), inst->out[r]);
     }
@@ -127,7 +140,7 @@ void Scoreboard::releaseRegisters(const class warp_inst_t* inst) {
     if (inst->out[r] > 0) {
       SHADER_DPRINTF(SCOREBOARD, "Register Released - warp:%d, reg: %d\n",
                      inst->warp_id(), inst->out[r]);
-      releaseRegister(inst->warp_id(), inst->out[r]);
+      releaseRegister(inst->original_wid(), inst->get_warp_active_mask(), inst->out[r]);  // GPGPULearning:ZSY_MPIPDOM
       longopregs[inst->warp_id()].erase(inst->out[r]);
     }
   }
@@ -140,7 +153,7 @@ void Scoreboard::releaseRegisters(const class warp_inst_t* inst) {
  * @return
  * true if WAW or RAW hazard (no WAR since in-order issue)
  **/
-bool Scoreboard::checkCollision(unsigned wid, const class inst_t* inst) const {
+bool Scoreboard::checkCollision(unsigned wid, active_mask_t msk/*GPGPULearning:ZSY_MPIPDOM*/, const class inst_t* inst) const {
   // Get list of all input and output registers
   std::set<int> inst_regs;
 
@@ -158,9 +171,18 @@ bool Scoreboard::checkCollision(unsigned wid, const class inst_t* inst) const {
   // instruction registers
   std::set<int>::const_iterator it2;
   for (it2 = inst_regs.begin(); it2 != inst_regs.end(); it2++)
-    if (reg_table[wid].find(*it2) != reg_table[wid].end()) {
-      return true;
+    // GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+    auto iter = reg_table[wid].find(*it2);
+    if (iter != reg_table[wid].end()) 
+    {
+      auto reserved_msk = iter->second;
+      reserved_msk &= msk;
+      if (reserved_msk.any())
+      {
+        return true;
+      }
     }
+    // GPGPULearning:ZSY_MPIPDOM:[END]
   return false;
 }
 

@@ -1056,7 +1056,7 @@ class warp_inst_t : public inst_t {
   void clear() { m_empty = true; }
 
   void issue(const active_mask_t &mask, unsigned warp_id,
-             unsigned long long cycle, int dynamic_warp_id, int sch_id);
+             unsigned long long cycle, unsigned original_wid /*GPGPULearning:ZSY_MPIPDOM*/, int dynamic_warp_id, int sch_id);
 
   const active_mask_t &get_active_mask() const { return m_warp_active_mask; }
   void completed(unsigned long long cycle)
@@ -1150,6 +1150,13 @@ class warp_inst_t : public inst_t {
     return m_warp_id;
   }
   
+  //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
+  unsigned original_wid() const
+  {
+    return m_original_wid;
+  }
+  //GPGPULearning:ZSY_MPIPDOM:[END]
+
   unsigned warp_id_func() const  // to be used in functional simulations only
   {
     return m_warp_id;
@@ -1198,6 +1205,7 @@ class warp_inst_t : public inst_t {
   bool should_do_atomic;
   bool m_is_printf;
   unsigned m_warp_id;
+  unsigned m_original_wid; /*GPGPULearning:ZSY_MPIPDOM*/
   unsigned m_dynamic_warp_id;
   const core_config *m_config;
   active_mask_t m_warp_active_mask;  // dynamic active mask for timing model

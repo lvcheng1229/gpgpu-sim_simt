@@ -44,9 +44,9 @@ class Scoreboard {
 
   void reserveRegisters(const warp_inst_t *inst);
   void releaseRegisters(const warp_inst_t *inst);
-  void releaseRegister(unsigned wid, unsigned regnum);
+  void releaseRegister(unsigned wid, active_mask_t i_mask/*GPGPULearning:ZSY_MPIPDOM*/, unsigned regnum);
 
-  bool checkCollision(unsigned wid, const inst_t *inst) const;
+  bool checkCollision(unsigned wid, active_mask_t msk/*GPGPULearning:ZSY_MPIPDOM*/, const inst_t *inst) const;
   bool pendingWrites(unsigned wid) const;
   void printContents() const;
   const bool islongop(unsigned warp_id, unsigned regnum);
