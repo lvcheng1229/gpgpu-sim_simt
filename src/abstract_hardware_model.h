@@ -399,7 +399,7 @@ typedef std::vector<address_type> addr_vector_t;
 
 class simt_stack {
  public:
-  simt_stack(unsigned wid, unsigned warpSize, class gpgpu_sim *gpu, shader_core_ctx* shader/*GPGPULearning:ZSY_MPIPDOM*/);
+  simt_stack(unsigned wid, unsigned warpSize, class gpgpu_sim *gpu,class shader_core_ctx* shader/*GPGPULearning:ZSY_MPIPDOM*/);
 
   void reset();
   void launch(address_type start_pc, const simt_mask_t &active_mask);
@@ -419,7 +419,9 @@ class simt_stack {
   unsigned m_warp_size;
 
   enum stack_entry_type { STACK_ENTRY_TYPE_NORMAL = 0, STACK_ENTRY_TYPE_CALL };
+  class gpgpu_sim *m_gpu;
 
+public:
   struct simt_stack_entry {
     address_type m_pc;
     unsigned int m_calldepth;
@@ -444,13 +446,9 @@ class simt_stack {
           //GPGPULearning:ZSY_MPIPDOM:[END]
           m_type(STACK_ENTRY_TYPE_NORMAL){};
   };
-
-  class gpgpu_sim *m_gpu;
-
+  
   //GPGPULearning:ZSY_MPIPDOM:[BEGIN]
-public:
   void launch(unsigned original_wid, simt_stack_entry new_stack_entry);
-
   unsigned int m_orig_warp_id;
   shader_core_ctx* m_shader;
   std::deque<simt_stack_entry> m_stack; /*GPGPULearning:ZSY_MPIPDOM:st_table*/

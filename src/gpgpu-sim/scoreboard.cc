@@ -48,8 +48,7 @@ void Scoreboard::printContents() const {
   for (unsigned i = 0; i < reg_table.size(); i++) {
     if (reg_table[i].size() == 0) continue;
     printf("  wid = %2d: ", i);
-    std::set<unsigned>::const_iterator it;
-    for (it = reg_table[i].begin(); it != reg_table[i].end(); it++)
+    for (auto it = reg_table[i].begin(); it != reg_table[i].end(); it++)
       printf("%u ", *it);
     printf("\n");
   }
@@ -171,9 +170,10 @@ bool Scoreboard::checkCollision(unsigned wid, active_mask_t msk/*GPGPULearning:Z
   // instruction registers
   std::set<int>::const_iterator it2;
   for (it2 = inst_regs.begin(); it2 != inst_regs.end(); it2++)
+  {
     // GPGPULearning:ZSY_MPIPDOM:[BEGIN]
     auto iter = reg_table[wid].find(*it2);
-    if (iter != reg_table[wid].end()) 
+    if (iter != reg_table[wid].end())
     {
       auto reserved_msk = iter->second;
       reserved_msk &= msk;
@@ -183,6 +183,7 @@ bool Scoreboard::checkCollision(unsigned wid, active_mask_t msk/*GPGPULearning:Z
       }
     }
     // GPGPULearning:ZSY_MPIPDOM:[END]
+  }
   return false;
 }
 
